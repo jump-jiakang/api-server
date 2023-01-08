@@ -1001,4 +1001,5 @@ db.query(sql, [req.body.avatar, req.user.id], (err, results)=>{
 
 ### 8.4 将用户功能上传到GitHub
 
-1、
+1. 运行 `git rm -r --cached node_modules` 命令
+2. 
