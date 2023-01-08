@@ -594,7 +594,7 @@ app.use(function (err, req, res, next) {
 
 1. 运行 `git rm -r --cached node_modules` 命令
 2. 运行 `git commit -m "完成了注册登录的功能"` 命令
-3. 运行 `git push -u origin login` 命令
+3. 运行 `git push -u origin master` 命令
 4. 运行 `git checkout -b user` 命令
 
 
@@ -611,3 +611,394 @@ app.use(function (err, req, res, next) {
 ### 5.1 初始化路由模块
 
 1、创建 `/router/userinfo.js` 路由模块
+
+```js
+// 导入 express
+const express = require('express')
+// 创建路由对象
+const router = express.Router()
+
+// 获取用户基本信息
+router.get('/userinfo',(req,res)=>{
+    res.send('ok')
+})
+
+// 向外共享路由对象
+module.exports = router
+```
+
+2、在 `app.js` 中导入并使用个人中心的路由模块:
+
+```js
+// 导入并使用用户信息路由模块
+const userinfoRouter = require('./router/userinfo')
+// 注意：以 /my 开头的接口，都是有权限的接口，需要进行 Token 身份认证
+app.use('/my', userinfoRouter)
+```
+
+
+
+### 5.2 初始化路由处理函数模块
+
+1、创建 `/router_handler/userinfo.js` 路由处理函数模块，并初始化如下结构：
+
+```js
+// 获取用户基本信息处理函数
+exports.getUserInfo = (req,res) => {
+    res.send('ok')
+}
+```
+
+2、修改 `/router/userinfo.js` 中的代码如下：
+
+```js
+// 导入用户信息处理函数模块
+const userinfo_handler = require('../router_handler/userinfo')
+// 获取用户基本信息
+router.get('/userinfo', userinfo_handler.getUserInfo)
+```
+
+
+
+### 5.3 获取用户的基本信息
+
+1、在 `/router_handler/userinfo.js` 头部导入数据库操作模块：
+
+```js
+// 导入数据库操作模块
+const db = require('../db/index')
+```
+
+2、定义 SQL 语句：
+
+```js
+// 注意：为了防止用户密码泄露，需要排除 password 字段
+const sql = `select id, username, nickname, email, user_pic from ev_users where id=?`
+```
+
+3、调用 `db.query()` 执行 SQL 语句：
+
+```js
+// 注意：req 对象上的 user 属性，是Token解析成功，express-jwt 中间件帮我们挂载上去的
+db.query(sql, req.user.id, (err,results)=>{
+    // 1. 执行 SQL 语句失败
+    if(err) return res.cc(err)
+    // 2. 执行 SQL 语句成功，但是查询到的数据条数不等于 1
+    if(results.length !== 1) return res.cc('获取用户信息失败！')
+    // 3. 将用户信息响应给客户端
+    res.send({
+        status: 0,
+        message: '获取用户信息成功！',
+        data: results[0]
+    })
+})
+```
+
+
+
+## 6. 更新用户基本信息
+
+**实现步骤：**
+
+1. 定义路由和处理函数
+2. 验证保单数据
+3. 实现更新用户基本信息功能
+
+### 6.1 定义路由和处理函数
+
+1、在 `/router/userinfo.js` 模块中，新增 **更新用户信息** 路由：
+
+```js
+// 更新用户的基本信息
+router.post('/userinfo',userinfo_handler.updateUserInfo)
+```
+
+2、在 `/router_handler/userinfo.js` 模块中，定义并向外共享 `更新用户基本信息` 的路由处理函数：
+
+```js
+// 更新用户基本信息的处理函数
+exports.updateUserInfo = (req,res) => {
+    res.send('ok')
+}
+```
+
+
+
+### 6.2 验证表单数据
+
+1、在 `/schema/user.js` 验证规则模块中，定义 id、nickname、Email 的验证规则如下：
+
+```js
+// 定义 id，nickname，email 的验证规则
+const id = joi.number().integer().min(1).required()
+const nickname = joi.string().required()
+const email = joi.string().email().required()
+```
+
+2、并使用 exports 向外共享 **验证规则对象**：
+
+```js
+// 验证规则对象 - 更新用户基本信息
+exports.update_userinfo_schema = {
+    body: {
+        id,
+        nickname,
+        email
+    }
+}
+```
+
+3、在 `/router/userinfo.js` 模块中，导入验证数据合法性中间件：
+
+```js
+// 导入验证数据合法性中间件
+const expressJoi = require('joi')
+```
+
+4、在 `/router/userinfo.js` 模块中，导入需要的验证规则对象：
+
+```js
+// 导入需要的验证规则对象
+const { update_userinfo_schema } = require('../schame/user')
+```
+
+5、在 `/router/userinfo.js` 模块中，修改 **更新用户基本信息** 的路由如下：
+
+```js
+// 更新用户的基本信息
+router.post('/userinfo', expressJoi(update_userinfo_schema) ,userinfo_handler.updateUserInfo)
+```
+
+
+
+### 6.3 实现更新用户基本信息功能
+
+1、定义待执行的 SQL 语句：
+
+```js
+const sql = `update ev_users set ? where id=?`
+```
+
+2、调用 `db.query()` 执行 SQL 语句并传参：
+
+```js
+db.query(sql, [req.body, req.body.id], (err,results)=>{
+    // 执行 SQL 语句
+    if(err) return res.cc(err)
+    // 执行 SQL 语句成功，但影响的行数不为1
+    if(results.affectedRows !== 1) return res.cc('修改用户基本信息失败！')
+    // 修改用户基本信息成功
+    return res.cc('修改用户基本信息成功！', 0)
+})
+```
+
+
+
+## 7. 重置密码
+
+ **实现步骤**
+
+1. 定义路由和处理函数
+2. 验证表单数据
+3. 实现重置密码的功能
+
+### 7.1 定义路由和处理函数
+
+1、在 `/router/userinfo.js` 模块中，新增 **重置密码** 的路由：
+
+```js
+// 重置密码的路由
+router.post('/updatepwd', userinfo_handler.updatePassword)
+```
+
+2、在 `/router_handler/userinfo,js` 模块中，定义并向外共享 **重置密码** 的路由处理函数：
+
+```js
+// 重置密码的处理函数
+exports.updatePassword = (req,res) => {
+    res.send('ok')
+}
+```
+
+
+
+### 7.2 验证表单数据
+
+> 核心验证思路：旧密码与新密码，必须符合密码的验证规则，并且新密码不能与旧密码一致！
+
+1、在 `/schame/user.js` 模块中，使用 `express` 向外共享如下的 **验证规则对象**：
+
+```js
+// 验证规则对象 - 重置密码
+exports.update_password_shema = {
+    body: {
+        // 使用 password 这个规则，验证 req.body.oldPwd 的值
+        oldPwd: password,
+        // 使用 joi.not(joi.ref('oldPwd')).concat(password) 规则，验证 req.body.newPwd 的值
+        // 解读：
+        // 1. joi.ref('oldPwd') 表示 newPwd 的值必须和 oldPwd 的值保持一致
+        // 2. joi.not(joi.ref('oldPwd')) 表示 newPwd 的值不能等于 oldPwd 的值
+        // 3. .concat() 用于合并 joi.not(joi.ref('oldPwd')) 和 password 这两条验证规则
+        newPwd: joi.not(joi.ref('oldPwd')).concat(password)
+    }
+}
+```
+
+2、在 `/router/userinfo.js` 模块中，导入需要的验证规则对象：
+
+```js
+// 导入需要的验证规则对象
+const { update_userinfo_schema, update_password_shema } = require('../schame/user')
+```
+
+3、并在**重置密码的路由**中，使用 `update_password_schame` 规则验证表单的数据，实例代码如下：
+
+```js
+router.post('/updatepwd', expressJoi(update_password_schema), userinfo_handler.updatePassword)
+```
+
+
+
+### 7.3 实现查询密码的功能
+
+1、根据 `id` 查询用户是否存在：
+
+```js
+// 定义根据 id 查询用户数据的 SQL 语句
+const sql = `select * from ev_users where id=?`
+
+// 执行 SQL 语句查询用户是否存在
+db.query(sql, req.user.id, (err,results)=>{
+    // 执行 SQL 语句失败
+    if(err) return res.cc(err)
+    // 检查指定 id 用户是否存在
+    if(results.length !== 1) return res.cc('用户不存在！')
+    // 判断提交的旧密码是否正确
+})
+```
+
+2、判断提交的 **旧密码** 是否正确：
+
+```js
+// 导入 bcryptjs 即可使用 bcrypt.compareSync(提交的密码, 数据库中的密码) 方法验证密码是否正确
+// comparaSync() 函数的返回值为布尔值， true 表示密码正确， false 表示密码错误 
+const bcrypt = require('bcryptjs')
+
+// 判断提交的旧密码是否正确
+const compareResult = bcrypt.compareSync(req.body.oldPwd,results[0].password)
+if(!compareResult) return res.cc('原密码错误！')
+```
+
+3、对新密码进行 `bcrypt` 加密之后，更新到数据库中：
+
+```js
+// 定义更新用户密码的 SQL 语句
+const sql = `update ev_users set password=? where id=?`
+
+// 对新密码进行 bcrypt 加密处理
+const newPwd = bcrypt.hashSync(req.body.newPwd, 10)
+
+// 执行 SQL 语句，根据 id 更新用户的密码
+db.query(sql, [newPwd, req.user.id], (err, results) => {
+  // SQL 语句执行失败
+  if (err) return res.cc(err)
+
+  // SQL 语句执行成功，但是影响行数不等于 1
+  if (results.affectedRows !== 1) return res.cc('更新密码失败！')
+
+  // 更新密码成功
+  res.cc('更新密码成功！', 0)
+})
+```
+
+
+
+### 8. 更新用户头像
+
+**实现步骤：**
+
+1. 定义路由和处理函数
+2. 验证表单数据
+3. 实现更新用户头像的功能
+
+### 8.1 定义路由和处理函数
+
+1、在 `/router/userinfo.js` 模块中，新增 **更新用户头像** 的路由：
+
+```js
+// 更新用户头像路由
+router.post('/update/avatar', userinfo_handler.updateAvatar)
+```
+
+2、在 `/router_handler/userinfo.js` 模块中，定义向外共享 **更新用户头像** 的路由处理函数：
+
+```js
+// 更新用户头像处理函数
+exports.updateAvatar = (req,res) => {
+    res.send('ok')
+}
+```
+
+
+
+### 8.2 验证数据表单
+
+1、在 `/schema/user.js` 验证规则模块中，定义 `avatar` 的验证规则如下：
+
+```js
+// dataUrl() 指的是如下格式的字符串数据：
+// data:image/png; base64, VE9PTUFOWVNFQ1JFVFM=
+const avatar = joi.string().dataUri().required()
+```
+
+2、并使用 exports 向外共享如下的 `验证规则对象`：
+
+```js
+// 验证规则对象 - 更新头像
+exports.update_avatar_schema = {
+    body: {
+        avatar,
+    }
+}
+```
+
+3、在 `/router/userinfo.js` 模块中，导入需要的验证规则对象：
+
+```js
+const { update_avatar_schema } = require('../schame/user')
+```
+
+4、在 `/router/userinfo.js` 模块中，修改 **更新用户头像** 的路由如下：
+
+```js
+router.post('/update/avatar', expressJoi(update_avatar_schema), userinfo_handler.updateAvatar)
+```
+
+
+
+### 8.3 实现更新用户头像功能
+
+1、定义更新用户头像的 SQL 语句：
+
+```js
+const sql = `update ev_users set user_pic=? where id=?`
+```
+
+2、调用 `db.query()` 执行 SQL 语句，更新对应用户的头像：
+
+```js
+db.query(sql, [req.body.avatar, req.user.id], (err, results)=>{
+    // 执行 SQL 语句失败
+    if(err) return res.cc(err)
+    // 执行 SQL 语句成功，但是影响行数不等于 1
+    if(results.affectedRows !== 1) return res.cc('更新头像失败！')
+    // 更新用户头像成功
+    return res.cc('更新头像成功！', 0)
+})
+```
+
+
+
+### 8.4 将用户功能上传到GitHub
+
+1、
